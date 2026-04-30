@@ -1,65 +1,6 @@
-import time
 import random
 from collections import defaultdict
 from CacheNode import CacheNode 
-
-class NetworkTopologyBuilder:
-    """Factory class to build different network topologies for testing."""
-
-    @staticmethod
-    def build_random_mesh(sim, num_nodes : int, extra_edges: int):
-        """ Topology 1: Random Mesh - Purely random Erdos-Renyi graph. """
-        print(f"Building Random Mesh with {num_nodes} nodes and {extra_edges} extra edges...")
-        
-        sim.num_nodes = num_nodes
-        # Ensure fully connectivity
-        for i in range(num_nodes - 1):
-            sim.add_link(i, i + 1, random.randint(10, 100))
-
-        # Add extra connectivity with out self loops
-        for _ in range(extra_edges):
-            u, v = random.sample(range(num_nodes), 2)
-            sim.add_link(u, v, random.randint(10, 100))
-
-    
-    @staticmethod
-    def build_regional_clusters(sim, regions: list, nodes_per_region: int):
-        """ Topology 2: Regional Clusters - Nodes are grouped into clusters with dense intra-cluster connectivity and sparse inter-cluster links. """
-        print(f"Building Regional Clusters with ({len(regions)} regions)")
-        region_nodes = {}
-        node_id_counter = 0
-        sim.num_nodes = len(regions) * nodes_per_region
-
-        # 1. Build tight local networks (Intra-region)
-        for region in regions:
-            local_nodes = []
-            for _ in range(nodes_per_region):
-                local_nodes.append(node_id_counter)
-                # Assign metadata to the node
-                sim.node_metadata[node_id_counter] = {"region": region, "type": "client"}
-                node_id_counter += 1
-            
-            region_nodes[region] = local_nodes
-
-            # Connect local nodes with low latency (5 - 15 ms)
-            for i in range(len(local_nodes) -1):
-                sim.add_link(local_nodes[i], local_nodes[i + 1], random.randint(5, 15))
-            
-        
-        # 2. Connect regions together via "backbone" routers (Inter-region)
-        # High latency (80 - 200 ms) to simulate long-distance links
-        region_names = list(regions)
-        for i in range(len(region_names) - 1):
-            router_a = random.choice(region_nodes[region_names[i]])
-            router_b = random.choice(region_nodes[region_names[i + 1]])
-            sim.add_link(router_a, router_b, random.randint(80, 200))
-
-            # Mark these as edge cache candidates
-            sim.node_metadata[router_a]["type"] = "edge_cache"
-            sim.node_metadata[router_b]["type"] = "edge_cache"
-        
-
-
 
 class MicroCDNSimulator:
     def __init__(self, capacity = 5, strategy = "LRU"):
@@ -78,6 +19,38 @@ class MicroCDNSimulator:
         self.graph[u][v] = latency
         self.graph[v][u] = latency
         self.edges.append((u, v, latency))
+
+    def unleash_chaos_monkey(self, failure_rate = 0.05):
+        """
+        Randomly severs a percentage of active network links
+        failure_rate: Float representing the chance any given link fails (0.05 = 5%)
+        """
+        broken_count = 0
+
+        # We need to rebuild self.edge and update self.graph
+        new_edges = []
+
+        for u, v, latency in self.edges:
+            # If the link is broken, 50% chance it comes back online
+            if latency == float('inf'):
+                if random.random() < 0.5:
+                    restored_latency = random.randint(10, 100)
+                    new_edges.append((u, v, restored_latency))
+                    self.graph[u][v] = restored_latency
+                    self.graph[v][u] = restored_latency
+                else:
+                    new_edges.append((u, v, float('inf')))
+            
+            elif random.random() < failure_rate:
+                new_edges.append((u, v, float('inf')))
+                self.graph[u][v] = float('inf')
+                self.graph[u][v] = float('inf')
+                broken_count += 1
+            else:
+                new_edges.append((u, v, latency))
+        self.edges = new_edges
+        return broken_count
+
     
     def calculate_bellman_ford(self, start_node, end_node):
         """
