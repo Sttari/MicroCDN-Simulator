@@ -1,9 +1,10 @@
 import time
 import random
 import concurrent.futures
-from Simulator import NetworkTopologyBuilder, MicroCDNSimulator
+from Simulator import MicroCDNSimulator
+from Builder import NetworkTopologyBuilder
 
-def run_single_strategy(strategy, regions, nodes_per_region, num_requests, cache_size, video_library, traffic_weights, seed):
+def run_single_strategy_on_regional_clusters(strategy, regions, nodes_per_region, num_requests, cache_size, video_library, traffic_weights, seed):
     """This function runs on an isolated CPU core."""
 
     # 1. Synchronize with the same seed
@@ -12,9 +13,7 @@ def run_single_strategy(strategy, regions, nodes_per_region, num_requests, cache
     sim = MicroCDNSimulator(capacity=cache_size, strategy=strategy)
     NetworkTopologyBuilder.build_regional_clusters(sim, regions, nodes_per_region)
     
-    origin_server = len(sim.graph) - 1
-    sim.node_metadata[origin_server] = {"type": "origin"}
-    client_node = [node for node in sim.graph.keys() if node != origin_server]
+    client_node = [node for node in sim.graph.keys() if sim.node_metadata[node].get("type") == "client"]
 
     hits = 0
     total_latency_cached = 0
@@ -23,7 +22,36 @@ def run_single_strategy(strategy, regions, nodes_per_region, num_requests, cache
         client = random.choice(client_node)
         target_video = random.choices(video_library, weights= traffic_weights, k = 1)[0]
 
-        res = sim.fetch_payload(client, origin_server, target_video)
+        res = sim.fetch_payload(client, target_video)
+
+        if res:
+            total_latency_cached += res["latency"]
+            if res["status"] == "hit":
+                hits += 1
+
+    hit_rate = (hits / num_requests) * 100
+    return strategy, hit_rate, total_latency_cached
+
+def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_size, video_library, traffic_weights, seed):
+    """This function runs on an isolated CPU core."""
+
+    # 1. Synchronize with the same seed
+    random.seed(seed)
+
+    sim = MicroCDNSimulator(capacity=cache_size, strategy=strategy)
+    NetworkTopologyBuilder.build_scale_free_network(sim, num_nodes, m = 3)
+    
+    client_node = [node for node in sim.graph.keys() if sim.node_metadata[node].get("type") == "client"]
+
+
+    hits = 0
+    total_latency_cached = 0
+
+    for i in range(num_requests):
+        client = random.choice(client_node)
+        target_video = random.choices(video_library, weights= traffic_weights, k = 1)[0]
+
+        res = sim.fetch_payload(client, target_video)
 
         if res:
             total_latency_cached += res["latency"]
@@ -35,11 +63,13 @@ def run_single_strategy(strategy, regions, nodes_per_region, num_requests, cache
 
 
 def run_parallel_cache_test():
-    regions = ["us-east", "us-west", "eu-central", "ap-south"]
-    nodes_per_region = 50
+    # regions = ["us-east", "us-west", "eu-central", "ap-south"]
+    # nodes_per_region = 50
+    
     num_requests = 15000
     cache_size = 10
-    
+    num_nodes = 200
+
     # Generate the video library and traffic weights
     video_library = [f"video_{i}.mp4" for i in range(50)]
     # First 5 videos get heavy traffic, the rest get low traffic
@@ -53,7 +83,8 @@ def run_parallel_cache_test():
 
     print(f"\n--- BOOTING SYNCHRONIZED PARALLEL CDN SIMULATION ---")
     print(f"Master Seed: {master_seed}")
-    print(f"Nodes per region: {nodes_per_region} | Requests: {num_requests}")
+    print(f"Total Nodes: {num_nodes} | Requests: {num_requests}")
+    # print(f"Nodes per region: {nodes_per_region} | Requests: {num_requests}")
     print("Dispatching tasks to CPU cores... please wait.\n")
 
     start_time = time.perf_counter()
@@ -62,8 +93,8 @@ def run_parallel_cache_test():
         futures = []
         for strategy in strategies:
             future = executor.submit(
-                run_single_strategy,
-                strategy, regions, nodes_per_region, num_requests, cache_size, video_library, traffic_weights, master_seed
+                run_single_strategy_on_scale_free,
+                strategy, num_nodes, num_requests, cache_size, video_library, traffic_weights, master_seed
             )
             futures.append(future)
 

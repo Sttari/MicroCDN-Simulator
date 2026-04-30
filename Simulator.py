@@ -5,6 +5,7 @@ from CacheNode import CacheNode
 class MicroCDNSimulator:
     def __init__(self, capacity = 5, strategy = "LRU"):
         self.num_nodes = 0
+        self.origin_server = 0
         self.graph = defaultdict(dict)  # For quick latency lookups: graph[u][v] = latency
         self.edges = []
         self.node_metadata = {}  # Store metadata for nodes (e.g., region, type)
@@ -52,7 +53,7 @@ class MicroCDNSimulator:
         return broken_count
 
     
-    def calculate_bellman_ford(self, start_node, end_node):
+    def calculate_bellman_ford(self, start_node):
         """
         Inputs:
             start_node (int): The client requesting data.
@@ -68,7 +69,7 @@ class MicroCDNSimulator:
         """
         dist = [float('inf')] * self.num_nodes
         successor  = [None] * self.num_nodes
-        dist[end_node] = 0
+        dist[self.origin_server] = 0
 
         for _ in range(self.num_nodes - 1):
             for u, v , latency in self.edges:
@@ -99,15 +100,14 @@ class MicroCDNSimulator:
 
 
 
-    def fetch_payload(self, client_node, origin_server, payload_id):
+    def fetch_payload(self, client_node,  payload_id):
         """
         Inputs:
             client_node (int): The user requesting the file.
-            origin_server (int): The main server that permanently stores the file.
             payload_id (str): The unique identifier for the requested data.
             
         Flow:
-            1. Call self.calculate_bellman_ford(client_node, origin_server) to get the ideal path.
+            1. Call self.calculate_bellman_ford(client_node) to get the ideal path.
             2. Iterate through the nodes in that path.
             3. Check if the node is an "edge_cache" and if payload_id is in self.cache_layer[node].
             4. CACHE HIT: Return early, log the reduced latency.
@@ -115,7 +115,7 @@ class MicroCDNSimulator:
                cache_layer of the edge nodes you pass through.
         """
         # 1: Get the ideal path and total latency, throw an error if no path exists
-        path, total_latency = self.calculate_bellman_ford(client_node, origin_server)
+        path, total_latency = self.calculate_bellman_ford(client_node)
         if not path: return None
 
         current_latency = 0
@@ -161,7 +161,7 @@ class MicroCDNSimulator:
             self.cache_layer[missed_node].put(payload_id, fetched_data)  # Populate the cache with the fetched data
         return {
             "status": "miss",
-            "served_by": origin_server,
+            "served_by": self.origin_server,
             "latency": total_latency,
             "data": fetched_data
         }
