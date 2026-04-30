@@ -196,17 +196,17 @@ class MicroCDNSimulator:
 
 def run_ab_cache_test():
     regions = ["us-east", "us-west", "eu-central", "ap-south"]
-    num_requests = 2000
+    num_requests = 15000
     cache_size = 10  # Very small cache forces heavy eviction!
     
     # Generate the video library and traffic weights
     video_library = [f"video_{i}.mp4" for i in range(50)]
     # First 5 videos get heavy traffic (weight 100), the rest get low traffic (weight 5)
-    traffic_weights = [500] * 5 + [5] * 45 
+    traffic_weights = [1000] * 5 + [5] * 45 
 
     results = {}
 
-    for strategy in ["RANDOM", "LRU"]:
+    for strategy in ["RANDOM", "LRU", "LFU"]:
         print(f"\n--- BOOTING CDN WITH {strategy} CACHE ---")
         sim = MicroCDNSimulator(capacity=cache_size, strategy=strategy)
         NetworkTopologyBuilder.build_regional_clusters(sim, regions, nodes_per_region=50)
@@ -241,13 +241,14 @@ def run_ab_cache_test():
     print("==================================================")
     print(f"Control Group (RANDOM): {results['RANDOM']['hit_rate']:.1f}% Hit Rate")
     print(f"Experimental  (LRU):    {results['LRU']['hit_rate']:.1f}% Hit Rate")
+    print(f"Experimental  (LFU):    {results['LFU']['hit_rate']:.1f}% Hit Rate")
     print("--------------------------------------------------")
     
-    diff = results['LRU']['hit_rate'] - results['RANDOM']['hit_rate']
-    latency_diff = results['RANDOM']['latency'] - results['LRU']['latency']
+    lfu_vs_random_diff = results['LFU']['hit_rate'] - results['RANDOM']['hit_rate']
+    lfu_vs_lru_diff = results['LFU']['hit_rate'] - results['LRU']['hit_rate']
     
-    print(f"LRU improved hit rate by: {diff:.1f}%")
-    print(f"LRU saved an additional:  {latency_diff} ms of latency")
+    print(f"LFU beat RANDOM by: +{lfu_vs_random_diff:.1f}% hit rate")
+    print(f"LFU beat LRU by:    +{lfu_vs_lru_diff:.1f}% hit rate")
     print("==================================================\n")
 
 if __name__ == "__main__":
