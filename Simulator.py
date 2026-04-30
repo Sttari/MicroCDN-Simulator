@@ -1,6 +1,6 @@
 import time
 import random
-from collections import defaultdict, deque
+from collections import defaultdict
 from CacheNode import CacheNode 
 
 class NetworkTopologyBuilder:
@@ -192,64 +192,3 @@ class MicroCDNSimulator:
             "latency": total_latency,
             "data": fetched_data
         }
-
-
-def run_ab_cache_test():
-    regions = ["us-east", "us-west", "eu-central", "ap-south"]
-    num_requests = 15000
-    cache_size = 10  # Very small cache forces heavy eviction!
-    
-    # Generate the video library and traffic weights
-    video_library = [f"video_{i}.mp4" for i in range(50)]
-    # First 5 videos get heavy traffic (weight 100), the rest get low traffic (weight 5)
-    traffic_weights = [1000] * 5 + [5] * 45 
-
-    results = {}
-
-    for strategy in ["RANDOM", "LRU", "LFU"]:
-        print(f"\n--- BOOTING CDN WITH {strategy} CACHE ---")
-        sim = MicroCDNSimulator(capacity=cache_size, strategy=strategy)
-        NetworkTopologyBuilder.build_regional_clusters(sim, regions, nodes_per_region=50)
-        
-        origin_server = len(sim.graph) - 1 
-        sim.node_metadata[origin_server] = {"type": "origin"}
-        client_nodes = [node for node in sim.graph.keys() if node != origin_server]
-
-        hits = 0
-        total_latency_cached = 0
-
-        # Run the traffic
-        for i in range(num_requests):
-            client = random.choice(client_nodes)
-            # Pick a video based on our viral distribution
-            target_video = random.choices(video_library, weights=traffic_weights, k=1)[0]
-            
-            res = sim.fetch_payload(client, origin_server, target_video)
-            
-            total_latency_cached += res["latency"]
-            if res["status"] == "hit":
-                hits += 1
-
-        hit_rate = (hits / num_requests) * 100
-        results[strategy] = {"hit_rate": hit_rate, "latency": total_latency_cached}
-        
-        print(f"[{strategy}] Done. Hit Rate: {hit_rate:.1f}%")
-
-    # Print Comparison
-    print("\n==================================================")
-    print("             A/B TEST REPORT")
-    print("==================================================")
-    print(f"Control Group (RANDOM): {results['RANDOM']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (LRU):    {results['LRU']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (LFU):    {results['LFU']['hit_rate']:.1f}% Hit Rate")
-    print("--------------------------------------------------")
-    
-    lfu_vs_random_diff = results['LFU']['hit_rate'] - results['RANDOM']['hit_rate']
-    lfu_vs_lru_diff = results['LFU']['hit_rate'] - results['LRU']['hit_rate']
-    
-    print(f"LFU beat RANDOM by: +{lfu_vs_random_diff:.1f}% hit rate")
-    print(f"LFU beat LRU by:    +{lfu_vs_lru_diff:.1f}% hit rate")
-    print("==================================================\n")
-
-if __name__ == "__main__":
-    run_ab_cache_test()
