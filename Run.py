@@ -102,7 +102,7 @@ def run_parallel_cache_test():
     master_seed = random.randint(1, 999999)
 
     results = {}
-    strategies = ["RANDOM", "LRU", "LFU"]
+    strategies = ["RANDOM", "LRU", "LFU", "W-TINYLFU"]
 
     print(f"\n--- BOOTING SYNCHRONIZED PARALLEL CDN SIMULATION ---")
     print(f"Master Seed: {master_seed}")
@@ -137,16 +137,21 @@ def run_parallel_cache_test():
     print("==================================================")
     print(f"Execution Time: {execution_time:.2f} seconds")
     print("--------------------------------------------------")
-    print(f"Control Group (RANDOM): {results['RANDOM']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (LRU):    {results['LRU']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (LFU):    {results['LFU']['hit_rate']:.1f}% Hit Rate")
+    print(f"Control Group (RANDOM)   : {results['RANDOM']['hit_rate']:.1f}% Hit Rate")
+    print(f"Experimental  (LRU)      : {results['LRU']['hit_rate']:.1f}% Hit Rate")
+    print(f"Experimental  (LFU)      : {results['LFU']['hit_rate']:.1f}% Hit Rate")
+    print(f"Experimental  (W-TINYLFU): {results['W-TINYLFU']['hit_rate']:.1f}% Hit Rate")
     print("--------------------------------------------------")
     
     lfu_vs_random_diff = results['LFU']['hit_rate'] - results['RANDOM']['hit_rate']
     lfu_vs_lru_diff = results['LFU']['hit_rate'] - results['LRU']['hit_rate']
+    wtlfu_vs_lru_diff = results['W-TINYLFU']['hit_rate'] - results['LRU']['hit_rate']
+    wtlfu_vs_lfu_diff = results['W-TINYLFU']['hit_rate'] - results['LFU']['hit_rate']
     
-    print(f"LFU beat RANDOM by: +{lfu_vs_random_diff:.1f}% hit rate")
-    print(f"LFU beat LRU by:    +{lfu_vs_lru_diff:.1f}% hit rate")
+    print(f"LFU beat RANDOM by:         +{lfu_vs_random_diff:.1f}% hit rate")
+    print(f"LFU beat LRU by:            +{lfu_vs_lru_diff:.1f}% hit rate")
+    print(f"W-TINYLFU beat LRU by:      +{wtlfu_vs_lru_diff:.1f}% hit rate")
+    print(f"W-TINYLFU beat LFU by:      +{wtlfu_vs_lfu_diff:.1f}% hit rate")
     print("==================================================\n")
 
 if __name__ == "__main__":
