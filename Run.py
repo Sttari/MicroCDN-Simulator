@@ -32,7 +32,7 @@ def run_single_strategy_on_regional_clusters(strategy, regions, nodes_per_region
     hit_rate = (hits / num_requests) * 100
     return strategy, hit_rate, total_latency_cached
 
-def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_size, video_library, traffic_weights, seed):
+def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_size, video_library, traffic, seed):
     """This function runs on an isolated CPU core."""
 
     # 1. Synchronize with the same seed
@@ -48,9 +48,26 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
     total_latency_cached = 0
     flash_crowd = 0
     chaos_monkey = 0
+    phase_length = num_requests // 3
 
-    for _ in range(num_requests):
+    for i in range(num_requests):
+        current_phase = i // phase_length
+        # Introducing viral shifts
+        if current_phase == 0:
+            # Phase 1 (Morning): Videos 0-4 are viral
+            traffic_weights = [traffic[0]] * 5 + [traffic[1]] * 45
+            
+        elif current_phase == 1:
+            # Phase 2 (Afternoon): Videos 10-14 are viral. Videos 0-4 drop to noise.
+            traffic_weights = [traffic[1]] * 10 + [traffic[0]] * 5 + [traffic[1]] * 35
+            
+        else:
+            # Phase 3 (Evening): Videos 20-24 are viral.
+            traffic_weights = [traffic[1]] * 20 + [traffic[0]] * 5 + [traffic[1]] * 25
+
         client = random.choice(client_nodes)
+
+
         target_video = random.choices(video_library, weights= traffic_weights, k = 1)[0]
 
         res = sim.fetch_payload(client, target_video)
@@ -58,7 +75,9 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
         # 0.1% chance of a "Flash Crowd" event occurring
         if random.random() < 0.001:
             # A massive spike of 50 simultaneous requests for the exact same video
-            viral_target = "video_17.mp4" 
+            if current_phase == 0: viral_target = "video_0.mp4"
+            elif current_phase == 1: viral_target = "video_10.mp4"
+            else: viral_target = "video_20.mp4"
             flash_crowd += 1
 
             crowd = random.randint(30, 80)
@@ -92,13 +111,13 @@ def run_parallel_cache_test():
     nodes_per_region = 50
     
     num_requests = 15000
-    cache_size = 8
+    cache_size = 10
     num_nodes = 100
 
     # Generate the video library and traffic weights
     video_library = [f"video_{i}.mp4" for i in range(50)]
-    # First 5 videos get heavy traffic, the rest get low traffic
-    traffic_weights = [100] * 5 + [5] * 45 
+    #  heavy traffic weights 100, low traffic weights at
+    traffic = [1000, 5]
 
     # Generate random seed for entire brenchmark run
     master_seed = random.randint(1, 999999)
@@ -121,7 +140,7 @@ def run_parallel_cache_test():
                 # run_single_strategy_on_regional_clusters,
                 # strategy, regions, nodes_per_region, num_requests, cache_size, video_library, traffic_weights, master_seed
                 run_single_strategy_on_scale_free,
-                strategy, num_nodes, num_requests, cache_size, video_library, traffic_weights, master_seed
+                strategy, num_nodes, num_requests, cache_size, video_library, traffic, master_seed
             )
             futures.append(future)
 
