@@ -1,8 +1,14 @@
 import time
+import math
 import random
 import concurrent.futures
 from Simulator import MicroCDNSimulator
 from Builder import NetworkTopologyBuilder
+
+def get_zipf_weights(num_videos, alpha = 1.5):
+    """Generates realistic power-law traffic weights."""
+    return [1.0 / math.pow(i, alpha) for i in range(1, num_videos + 1) ]
+
 
 def run_single_strategy_on_regional_clusters(strategy, regions, nodes_per_region, num_requests, cache_size, video_library, traffic_weights, seed):
     """This function runs on an isolated CPU core."""
@@ -32,7 +38,7 @@ def run_single_strategy_on_regional_clusters(strategy, regions, nodes_per_region
     hit_rate = (hits / num_requests) * 100
     return strategy, hit_rate, total_latency_cached
 
-def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_size, video_library, traffic, seed):
+def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_size, video_library, seed):
     """This function runs on an isolated CPU core."""
 
     # 1. Synchronize with the same seed
@@ -51,19 +57,20 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
     phase_length = num_requests // 3
 
     for i in range(num_requests):
+        base_zipf = get_zipf_weights(500, alpha=1.5)
         current_phase = i // phase_length
         # Introducing viral shifts
         if current_phase == 0:
             # Phase 1 (Morning): Videos 0-4 are viral
-            traffic_weights = [traffic[0]] * 5 + [traffic[1]] * 45
+            traffic_weights = base_zipf
             
         elif current_phase == 1:
             # Phase 2 (Afternoon): Videos 10-14 are viral. Videos 0-4 drop to noise.
-            traffic_weights = [traffic[1]] * 10 + [traffic[0]] * 5 + [traffic[1]] * 35
+            traffic_weights = base_zipf[5:15] + base_zipf[0:5] + base_zipf[15:]
             
         else:
             # Phase 3 (Evening): Videos 20-24 are viral.
-            traffic_weights = [traffic[1]] * 20 + [traffic[0]] * 5 + [traffic[1]] * 25
+            traffic_weights = base_zipf[15:35] + base_zipf[0:15] + base_zipf[35:]
 
         client = random.choice(client_nodes)
 
@@ -73,16 +80,14 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
         res = sim.fetch_payload(client, target_video)
 
         # 0.1% chance of a "Flash Crowd" event occurring
-        if random.random() < 0.001:
+        if random.random() < 0.005:
             # A massive spike of 50 simultaneous requests for the exact same video
-            if current_phase == 0: viral_target = "video_0.mp4"
-            elif current_phase == 1: viral_target = "video_10.mp4"
-            else: viral_target = "video_20.mp4"
+            if current_phase == 0: viral_target = "video_10.mp4"
+            elif current_phase == 1: viral_target = "video_20.mp4"
+            else: viral_target = "video_0.mp4"
             flash_crowd += 1
-
-            crowd = random.randint(30, 80)
         
-            for _ in range(crowd):
+            for _ in range(50):
                 # All coming from random clients 
                 client = random.choice(client_nodes)
                 res = sim.fetch_payload(client, viral_target)
@@ -92,6 +97,21 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
                     if res["status"] == "hit":
                         hits += 1
     
+        # 0.5% chance of a Malicious Botnet / Web Scraper
+        if random.random() < 0.005:
+            # The bot requests 50 random, highly unpopular videos exactly once
+            scraper_targets = random.sample(range(100, 500), 50) 
+            
+            for bot_target_id in scraper_targets:
+                bot_video = f"video_{bot_target_id}.mp4"
+                client = random.choice(client_nodes)
+                
+                res = sim.fetch_payload(client, bot_video)
+                if res:
+                    total_latency_cached += res["latency"]
+                    if res["status"] == "hit": 
+                        hits += 1
+
         # 2% chance the Chaos Monkey attacks the network during this tick
         if random.random() < 0.02:
             broken = sim.unleash_chaos_monkey(failure_rate=0.03)
@@ -115,9 +135,9 @@ def run_parallel_cache_test():
     num_nodes = 100
 
     # Generate the video library and traffic weights
-    video_library = [f"video_{i}.mp4" for i in range(50)]
-    #  heavy traffic weights 100, low traffic weights at
-    traffic = [1000, 5]
+    video_library = [f"video_{i}.mp4" for i in range(500)]
+    # #  heavy traffic weights 100, low traffic weights at
+    # traffic = [1000, 5]
 
     # Generate random seed for entire brenchmark run
     master_seed = random.randint(1, 999999)
@@ -140,7 +160,7 @@ def run_parallel_cache_test():
                 # run_single_strategy_on_regional_clusters,
                 # strategy, regions, nodes_per_region, num_requests, cache_size, video_library, traffic_weights, master_seed
                 run_single_strategy_on_scale_free,
-                strategy, num_nodes, num_requests, cache_size, video_library, traffic, master_seed
+                strategy, num_nodes, num_requests, cache_size, video_library, master_seed
             )
             futures.append(future)
 
@@ -154,7 +174,7 @@ def run_parallel_cache_test():
 
     # Print Comparison
     print("\n==================================================")
-    print("             PARALLEL A/B/C TEST REPORT")
+    print("             PARALLEL A/B TEST REPORT")
     print("==================================================")
     print(f"Execution Time: {execution_time:.2f} seconds")
     print("--------------------------------------------------")
