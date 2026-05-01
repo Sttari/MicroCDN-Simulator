@@ -60,8 +60,10 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
             # A massive spike of 50 simultaneous requests for the exact same video
             viral_target = "video_17.mp4" 
             flash_crowd += 1
+
+            crowd = random.randint(30, 80)
         
-            for _ in range(50):
+            for _ in range(crowd):
                 # All coming from random clients 
                 client = random.choice(client_nodes)
                 res = sim.fetch_payload(client, viral_target)
@@ -90,7 +92,7 @@ def run_parallel_cache_test():
     nodes_per_region = 50
     
     num_requests = 15000
-    cache_size = 10
+    cache_size = 8
     num_nodes = 100
 
     # Generate the video library and traffic weights

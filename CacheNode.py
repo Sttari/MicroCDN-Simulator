@@ -39,8 +39,10 @@ class CacheNode:
             self.main_payload_freq = {}
             self.main_freq_map = defaultdict(OrderedDict)
 
-            # 4. Historical
+            # 4. Historical sketch with decay
             self.freq_sketch = defaultdict(int)
+            self.sketch_updates = 0
+            self.sketch_window = capacity * 10
         
     
         
@@ -77,7 +79,7 @@ class CacheNode:
         
         elif self.strategy == "W-TINYLFU":
             # Alaways update frequency here
-            self.freq_sketch[payload_id] += 1 
+            self._record_frequency(payload_id) 
 
             # Case item in 20% LRU
             if payload_id in self.window_lru:
@@ -119,7 +121,7 @@ class CacheNode:
             return
 
         elif self.strategy == "W-TINYLFU":
-            self.freq_sketch[payload_id] += 1
+            self._record_frequency(payload_id) 
 
             # Case item in 20% LRU
             if payload_id in self.window_lru:
@@ -220,3 +222,25 @@ class CacheNode:
         freq = self.freq_sketch[payload_id]
         self.main_payload_freq[payload_id] = freq
         self.main_freq_map[freq][payload_id] = data
+    
+    def _record_frequency(self, payload_id):
+        """
+        Increment the sketch and applies aging decay if needed
+        """
+        self.freq_sketch[payload_id] += 1
+        self.sketch_updates += 1
+
+        # The Aging
+        if self.sketch_updates >= self.sketch_window:
+            self.sketch_updates = 0
+
+            # Half all score and delete if key reaches 0
+            key_to_delete = []
+            for key in self.freq_sketch:
+                self.freq_sketch[key] //= 2
+                if self.freq_sketch[key] == 0:
+                    key_to_delete.append(key)
+            
+            for key in key_to_delete:
+                del self.freq_sketch[key]
+
