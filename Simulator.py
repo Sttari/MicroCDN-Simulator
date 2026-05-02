@@ -1,6 +1,7 @@
 import random
 from collections import defaultdict
 from CacheNode import CacheNode 
+import heapq
 
 class MicroCDNSimulator:
     def __init__(self, capacity = 5, strategy = "LRU"):
@@ -51,6 +52,40 @@ class MicroCDNSimulator:
                 new_edges.append((u, v, latency))
         self.edges = new_edges
         return broken_count
+
+    def find_nearest_anycast(self, start_node, node_type):
+        """
+        Uses Dijkstra's Algorithm to find the closest Anycast Edge Cache.
+        Returns: (nearest_edgenode_id, latency_to_edge)
+        """
+        dist= {node: float('inf') for node in range(self.num_nodes)}
+        dist[start_node] = 0
+
+        pq = [(0, start_node)]
+        nearest_edge = None
+        min_edge_latency = float('inf')
+
+        while pq:
+            curr_latency, node = heapq.heappop(pq)
+
+            if curr_latency > dist[node]:
+                continue
+
+            if self.node_metadata.get(node, {}).get("type") == node_type:
+                if curr_latency < min_edge_latency:
+                    min_edge_latency = curr_latency
+                    nearest_edge = node
+                continue
+            
+            for neighbour, latency in self.graph[node].items():
+                if latency == float('inf'):
+                    continue
+                new_latency = curr_latency + latency
+                if new_latency < dist[neighbour]:
+                    dist[neighbour] = new_latency
+                    heapq.heappush(pq, (new_latency, neighbour))
+        
+        return nearest_edge, min_edge_latency
 
     
     def calculate_bellman_ford(self, start_node):
@@ -165,3 +200,46 @@ class MicroCDNSimulator:
             "latency": total_latency,
             "data": fetched_data
         }
+
+    def fetch_payload_anycast(self, client_node, payload_id):
+        """
+        Inputs:
+        client_node (int): The user requesting the file.
+        payload_id (str): The unique identifier for the requested data.
+
+        Flow:
+        1. Call self.find_nearest_anycast_edge(client_node) to get the ideal path to closest anycast
+        2. Cache Hit: return earily with data
+        2. Cache Miss:
+        """
+        edge_node, client_to_edge_latency = self.find_nearest_anycast(client_node, "edge_cache")
+        if edge_node is None:
+            return None
+        
+
+        edge_cache = self.cache_layer.get(edge_node)
+        if  edge_cache:
+            cached_data = edge_cache.get(payload_id)
+            if cached_data:
+                return {
+                    "status":"hit",
+                    "latency": client_to_edge_latency,
+                    "served_by":edge_node
+                }
+        else :
+            self.cache_layer[edge_node] = CacheNode(self.cache_capacity, self.cache_strategy)
+            
+        origin_server, edge_to_origin_latency = self.find_nearest_anycast(edge_node, "origin")
+        if edge_to_origin_latency == float('inf'):
+            return None
+        fetched_data = f"Binary_Data_For_{payload_id}"
+
+        self.cache_layer[edge_node].put(payload_id, fetched_data)
+        total_latency = client_to_edge_latency + edge_to_origin_latency
+
+        return {
+            "status": "miss", 
+            "latency": total_latency,
+            "served_by": origin_server
+        }
+            
