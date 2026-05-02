@@ -225,7 +225,7 @@ class CacheNode:
     
     def _record_frequency(self, payload_id):
         """
-        Increment the sketch and applies aging decay if needed
+        Increment the sketch and applies aging decay if needed to prevent forever increasing frequency
         """
         self.freq_sketch[payload_id] += 1
         self.sketch_updates += 1
@@ -243,4 +243,3 @@ class CacheNode:
             
             for key in key_to_delete:
                 del self.freq_sketch[key]
-

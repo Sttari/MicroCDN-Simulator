@@ -90,6 +90,8 @@ class MicroCDNSimulator:
     
     def calculate_bellman_ford(self, start_node):
         """
+        Calculate the shortest path from start_node to origin_server using bellman ford algorithm
+        O(|E|*|V|)
         Inputs:
             start_node (int): The client requesting data.
             end_node (int): The target origin server.
@@ -98,9 +100,6 @@ class MicroCDNSimulator:
             path (list): The sequence of node IDs representing the lowest latency route.
             total_latency (int): The combined weight of the path.
             
-        Requirements:
-            - Must handle potential dynamic weight changes.
-            - Should include the V-th iteration check for negative weight cycles.
         """
         dist = [float('inf')] * self.num_nodes
         successor  = [None] * self.num_nodes

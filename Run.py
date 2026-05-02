@@ -255,7 +255,7 @@ def run_parallel_cache_test():
             strategy_name, hit_rate, latency, fresh, monkey = future.result()
             results[strategy_name] = {"hit_rate": hit_rate, "latency": latency}
             print(f"[{strategy_name}] CPU Core finished! Hit Rate: {hit_rate:.1f}%")
-            print(f"[{strategy_name}] Hit Flash Crowds {fresh} times, hit Chaos Monkey {monkey} times")
+            print(f"[{strategy_name}] Hit Flash Crowds {fresh} times, hit Chaos Monkey {monkey} times\n")
 
     execution_time = time.perf_counter() - start_time
 
@@ -270,7 +270,12 @@ def run_parallel_cache_test():
     print(f"Experimental  (LFU)      : {results['LFU']['hit_rate']:.1f}% Hit Rate")
     print(f"Experimental  (W-TINYLFU): {results['W-TINYLFU']['hit_rate']:.1f}% Hit Rate")
     print("--------------------------------------------------")
-    
+    print(f"Control Group (RANDOM)   : Avg. {(results['RANDOM']['latency']/num_requests):.1f} latency Cost")
+    print(f"Experimental  (LRU)      : Avg. {(results['LRU']['latency']/num_requests):.1f} latency Cost")
+    print(f"Experimental  (LFU)      : Avg. {(results['LFU']['latency']/num_requests):.1f} latency Cost")
+    print(f"Experimental  (W-TINYLFU): Avg. {(results['W-TINYLFU']['latency']/num_requests):.1f} latency Cost")
+    print("--------------------------------------------------")
+
     lfu_vs_random_diff = results['LFU']['hit_rate'] - results['RANDOM']['hit_rate']
     lfu_vs_lru_diff = results['LFU']['hit_rate'] - results['LRU']['hit_rate']
     wtlfu_vs_lru_diff = results['W-TINYLFU']['hit_rate'] - results['LRU']['hit_rate']
@@ -280,6 +285,9 @@ def run_parallel_cache_test():
     print(f"LFU beat LRU by:            +{lfu_vs_lru_diff:.1f}% hit rate")
     print(f"W-TINYLFU beat LRU by:      +{wtlfu_vs_lru_diff:.1f}% hit rate")
     print(f"W-TINYLFU beat LFU by:      +{wtlfu_vs_lfu_diff:.1f}% hit rate")
+    print("--------------------------------------------------")
+    
+
     print("==================================================\n")
 
 if __name__ == "__main__":
