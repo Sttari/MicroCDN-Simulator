@@ -131,10 +131,14 @@ class MicroCDNSimulator:
             curr = successor[curr]
         return path, dist[start_node]
 
+    def fetch_payload(self, client_node, payload_id, isAnycast):
+        if isAnycast:
+            return self._fetch_payload_anycast(client_node, payload_id)
+        else:
+            return self._fetch_payload_Bellman_ford(client_node, payload_id)
 
 
-
-    def fetch_payload(self, client_node,  payload_id):
+    def _fetch_payload_Bellman_ford(self, client_node,  payload_id):
         """
         Inputs:
             client_node (int): The user requesting the file.
@@ -200,14 +204,14 @@ class MicroCDNSimulator:
             "data": fetched_data
         }
 
-    def fetch_payload_anycast(self, client_node, payload_id):
+    def _fetch_payload_anycast(self, client_node, payload_id):
         """
         Inputs:
         client_node (int): The user requesting the file.
         payload_id (str): The unique identifier for the requested data.
 
         Flow:
-        1. Call self.find_nearest_anycast_edge(client_node) to get the ideal path to closest anycast
+        1. Call self.find_nearest_anycast_edge(client_node) to get the ideal path to closest anycast edge node
         2. Cache Hit: return earily with data
         2. Cache Miss:
         """

@@ -67,7 +67,7 @@ class NetworkTopologyBuilder:
         
         for i in range(sim.num_nodes):
             if sim.node_metadata[i]["type"] != "edge_cache":
-                sim.node_metadata[i]["type"] = "origin"
+                sim.node_metadata[i]["typae"] = "origin"
                 sim.origin_server = i
                 break
 
