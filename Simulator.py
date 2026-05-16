@@ -8,8 +8,8 @@ class MicroCDNSimulator:
         self.num_nodes = 0
         self.origin_server = 0
         self.graph = defaultdict(dict)  # For quick latency lookups: graph[u][v] = latency
-        self.edges = []
-        self.node_metadata = {}  # Store metadata for nodes (e.g., region, type)
+        self.edges = [] 
+        self.node_metadata = {}  # Node id -> {}  Store metadata for nodes (e.g., region, type) 
 
         # Add CacheNode
         self.cache_capacity = capacity
@@ -24,12 +24,11 @@ class MicroCDNSimulator:
 
     def unleash_chaos_monkey(self, failure_rate = 0.05):
         """
-        Randomly severs a percentage of active network links
+        Each network link has a precentage of chance to fail (set latency -> infinity)
+        Use to simulate network failure during client access
         failure_rate: Float representing the chance any given link fails (0.05 = 5%)
         """
         broken_count = 0
-
-        # We need to rebuild self.edge and update self.graph
         new_edges = []
 
         for u, v, latency in self.edges:
@@ -53,16 +52,23 @@ class MicroCDNSimulator:
         self.edges = new_edges
         return broken_count
 
-    def find_nearest_anycast(self, start_node, node_type):
+    def fetch_payload(self, client_node, payload_id, isAnycast):
+        if isAnycast:
+            return self._fetch_payload_anycast(client_node, payload_id)
+        else:
+            return self._fetch_payload_origin(client_node, payload_id)
+
+    def _find_nearest_node(self, start_node, node_type = "edge_cache"):
         """
-        Uses Dijkstra's Algorithm to find the closest Anycast Edge Cache.
-        Returns: (nearest_edgenode_id, latency_to_edge)
+        Uses Dijkstra's Algorithm to find the closest node with node type.
+        Used to find the nearest edge_cache and origin_node
+        Returns: (nearest_cache_node_id, latency_to_edge)
         """
         dist= {node: float('inf') for node in range(self.num_nodes)}
         dist[start_node] = 0
 
         pq = [(0, start_node)]
-        nearest_edge = None
+        nearest_cache_node = None
         min_edge_latency = float('inf')
 
         while pq:
@@ -74,7 +80,7 @@ class MicroCDNSimulator:
             if self.node_metadata.get(node, {}).get("type") == node_type:
                 if curr_latency < min_edge_latency:
                     min_edge_latency = curr_latency
-                    nearest_edge = node
+                    nearest_cache_node = node
                 continue
             
             for neighbour, latency in self.graph[node].items():
@@ -85,21 +91,13 @@ class MicroCDNSimulator:
                     dist[neighbour] = new_latency
                     heapq.heappush(pq, (new_latency, neighbour))
         
-        return nearest_edge, min_edge_latency
-
+        return nearest_cache_node, min_edge_latency
     
-    def calculate_bellman_ford(self, start_node):
+    def _find_nearest_node_path(self, start_node):
         """
         Calculate the shortest path from start_node to origin_server using bellman ford algorithm
+        Returns: (nearest_path_to_origin, latency_to_origin)
         O(|E|*|V|)
-        Inputs:
-            start_node (int): The client requesting data.
-            end_node (int): The target origin server.
-            
-        Returns:
-            path (list): The sequence of node IDs representing the lowest latency route.
-            total_latency (int): The combined weight of the path.
-            
         """
         dist = [float('inf')] * self.num_nodes
         successor  = [None] * self.num_nodes
@@ -131,21 +129,14 @@ class MicroCDNSimulator:
             curr = successor[curr]
         return path, dist[start_node]
 
-    def fetch_payload(self, client_node, payload_id, isAnycast):
-        if isAnycast:
-            return self._fetch_payload_anycast(client_node, payload_id)
-        else:
-            return self._fetch_payload_Bellman_ford(client_node, payload_id)
-
-
-    def _fetch_payload_Bellman_ford(self, client_node,  payload_id):
+    def _fetch_payload_origin(self, client_node,  payload_id):
         """
         Inputs:
             client_node (int): The user requesting the file.
             payload_id (str): The unique identifier for the requested data.
             
         Flow:
-            1. Call self.calculate_bellman_ford(client_node) to get the ideal path.
+            1. Call self._find_nearest_node_path(client_node) to get the ideal path.
             2. Iterate through the nodes in that path.
             3. Check if the node is an "edge_cache" and if payload_id is in self.cache_layer[node].
             4. CACHE HIT: Return early, log the reduced latency.
@@ -153,7 +144,7 @@ class MicroCDNSimulator:
                cache_layer of the edge nodes you pass through.
         """
         # 1: Get the ideal path and total latency, throw an error if no path exists
-        path, total_latency = self.calculate_bellman_ford(client_node)
+        path, total_latency = self._find_nearest_node_path(client_node)
         if not path: return None
 
         current_latency = 0
@@ -211,11 +202,11 @@ class MicroCDNSimulator:
         payload_id (str): The unique identifier for the requested data.
 
         Flow:
-        1. Call self.find_nearest_anycast_edge(client_node) to get the ideal path to closest anycast edge node
+        1. Call self._find_nearest_node(client_node) to get the ideal path to closest anycast edge node
         2. Cache Hit: return earily with data
         2. Cache Miss:
         """
-        edge_node, client_to_edge_latency = self.find_nearest_anycast(client_node, "edge_cache")
+        edge_node, client_to_edge_latency = self._find_nearest_node(client_node, "edge_cache")
         if edge_node is None:
             return None
         
@@ -232,7 +223,7 @@ class MicroCDNSimulator:
         else :
             self.cache_layer[edge_node] = CacheNode(self.cache_capacity, self.cache_strategy)
             
-        origin_server, edge_to_origin_latency = self.find_nearest_anycast(edge_node, "origin")
+        origin_server, edge_to_origin_latency = self._find_nearest_node(edge_node, "origin")
         if edge_to_origin_latency == float('inf'):
             return None
         fetched_data = f"Binary_Data_For_{payload_id}"

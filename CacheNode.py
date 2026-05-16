@@ -10,6 +10,7 @@ class CacheNode:
         if strategy == "LRU":
             self.store = OrderedDict()
 
+
         elif strategy == "RANDOM":
             self.store = {}
             # We need an array for O(1) random picking
@@ -18,7 +19,7 @@ class CacheNode:
             self.random_key_indices = {}
 
         # LFU: Least Frequently Used, using a Hashmap to track payload frequency, a Hashmap of doublely linked hashmap for frequency to data
-        # Also keep the min_freq for easy access
+        # Also keep the min_freq for O(1) access to the min element when poping
         elif strategy == "LFU":
             # Payload_id -> current frequency count
             self.payload_freq = {}
@@ -26,9 +27,12 @@ class CacheNode:
             self.freq_map = defaultdict(OrderedDict)
             self.min_freq = 0
 
-        # W-TinyLFU
+        # W-TinyLFU : start with a small LRU as 'waiting room', element qty exceed the capacity of small LRU, move the element to larger LFU
+        # if qty is also exceed the capacity of larger LFU, pop like an LFU
+        # A decay feature to remove zombie data lies in LFU
+        # By default, its 20% LRU, 80% LFU
         elif strategy == "W-TINYLFU":
-            # 1. Allocate (20% Window, 80% Main)
+            # 1. Allocate (20% LRU, 80% LFU)
             self.window_capacity = max(1, int(capacity * 0.2))
             self.main_capacity = capacity - self.window_capacity
 
@@ -40,6 +44,7 @@ class CacheNode:
             self.main_freq_map = defaultdict(OrderedDict)
 
             # 4. Historical sketch with decay
+            # We can not save all resouce frequency forever. 
             self.freq_sketch = defaultdict(int)
             self.sketch_updates = 0
             self.sketch_window = capacity * 10
@@ -48,8 +53,8 @@ class CacheNode:
         
     def get(self, payload_id):
         if self.strategy == "LRU":
+            # Move the item to the end (Most Recently Used)
             if payload_id in self.store:
-                # Move the item to the end (Most Recently Used)
                 self.store.move_to_end(payload_id)
             return self.store.get(payload_id)
         
