@@ -182,4 +182,4 @@ def run_parallel_cache_test(num_requests = 15000, cache_size = 10, num_nodes = 1
     print("==================================================\n")
 
 if __name__ == "__main__":
-    run_parallel_cache_test(num_requests = 15000, cache_size = 10, num_nodes = 100)
+    run_parallel_cache_test(num_requests = 30000, cache_size = 10, num_nodes = 500)

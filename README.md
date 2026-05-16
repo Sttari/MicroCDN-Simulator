@@ -91,3 +91,19 @@ W-TINYLFU beat LFU by:      +10.2% hit rate
 2. The Zipfian Fat Tail: Pure LRU fails under real internet traffic because the sheer volume of "long-tail" obscure requests constantly flushes valuable viral data from the cache.
 
 3. The W-TinyLFU Synthesis: By routing all new traffic through an LRU window and only promoting items to the main LFU cache via a historical "Challenge," W-TinyLFU flawlessly absorbs botnet scrapers while permanently retaining highly requested items.
+
+# Potential things to implement next
+
+1. Byte-Based Caching: Moving from "slot-based design" (capacity = 10) to "Byte-Based design" (capacity = 10 Mb) to simulate the file by actual size
+
+2. Advance Graph simulation: with regional clustering combined with scale-free newtwork
+
+3. Consistent Hashing: Continue on above, if client in the same region, direct them to the same edge_cache to save regional memory for duplicated data.
+
+4. Bloom Filter: Adding extra protection from Malicious Botnets
+
+5. Building the CLI Tool (cdnsim): Convert this simulator to a CLI excutable tools for simulation for configurable simulation imput statistics `cdnsim --requests 50000 --botnet-rate 0.05`
+
+6. Concurrency: Instead of a `for loop` to simulate request, use `asyncio` to simulate flash-crowd requests hit the cache at exact same second, and potentially all other requests
+
+7. Visualization: Instead of printing the result, output the result as a `output.csv` file for possible visulization on the statistics 
