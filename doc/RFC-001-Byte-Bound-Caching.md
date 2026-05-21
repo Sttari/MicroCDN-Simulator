@@ -1,7 +1,5 @@
 # RFC-001: Byte-Bound Caching & Density-Based Eviction
 
-**Author:** Staff CDN Engineering Team  
-**Status:** Approved for Implementation  
 **Component:** `CacheNode` Core Engine  
 
 ## 1. Background & Motivation
