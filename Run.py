@@ -16,8 +16,8 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
     # Synchronize with the same seed
     random.seed(seed)
 
-    # Initiate the simulator and the graph builder for simulation
-    sim = MicroCDNSimulator(capacity=cache_size, strategy=strategy)
+    # Initiate the simulator and the graph buition
+    sim = MicroCDNSimulator(max_size=cache_size, strategy=strategy)
     NetworkTopologyBuilder.build_scale_free_network(sim, num_nodes, m = 2)
     
     # Initiate a list of client node to simulator request from client
@@ -26,9 +26,12 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
     # Initiate the stats for simulation
     hits = 0
     total_latency_cached = 0
-    flash_crowd = 0
-    chaos_monkey = 0
+    total_size_cached = 0
+    total_size_requested = 0
     phase_length = num_requests // 3
+    chaos_monkey = 0
+    flash_crowd = 0
+
 
 
     # Actual Simulation Loop
@@ -38,44 +41,48 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
         base_zipf = get_zipf_weights(500, alpha=1.5)
         current_phase = i // phase_length
 
-        # Introducing viral shifts
-        if current_phase == 0:
-            # Phase 1 (Morning): Videos 0-4 are viral
-            traffic_weights = base_zipf
+        traffic_weights = base_zipf
+        # # Introducing viral shifts
+        # if current_phase == 0:
+        #     # Phase 1 (Morning): Videos 0-4 are viral
+        #     traffic_weights = base_zipf
 
-        elif current_phase == 1:
-            # Phase 2 (Afternoon): Videos 10-14 are viral. Videos 0-4 drop to noise.
-            traffic_weights = base_zipf[5:15] + base_zipf[0:5] + base_zipf[15:]
+        # elif current_phase == 1:
+        #     # Phase 2 (Afternoon): Videos 10-14 are viral. Videos 0-4 drop to noise.
+        #     traffic_weights = base_zipf[5:15] + base_zipf[0:5] + base_zipf[15:]
 
-        else:
-            # Phase 3 (Evening): Videos 20-24 are viral.
-            traffic_weights = base_zipf[15:35] + base_zipf[0:15] + base_zipf[35:]
+        # else:
+        #     # Phase 3 (Evening): Videos 20-24 are viral.
+        #     traffic_weights = base_zipf[15:35] + base_zipf[0:15] + base_zipf[35:]
 
         # Randomly select our client to start
         client = random.choice(client_nodes)
-        target_video = random.choices(video_library, weights= traffic_weights, k = 1)[0]
+        target_video, v_size = random.choices(video_library, weights= traffic_weights, k = 1)[0]
+
 
         
-        res = sim.fetch_payload(client, target_video, isAnycast)
+        res = sim.fetch_payload(client, target_video, isAnycast, v_size)
 
         if res:
             total_latency_cached += res["latency"]
+            total_size_cached += res["Byte from Cache"]
+            total_size_requested += res["Byte requested"]
             if res["status"] == "hit":
                 hits += 1
 
         # 0.1% chance of a "Flash Crowd" event occurring
         # This simulates a sudden spike massive spike of 50 simultaneous requests for the exact same video
         if random.random() < 0.005:
-            if current_phase == 0: viral_target = "video_10.mp4"
-            elif current_phase == 1: viral_target = "video_20.mp4"
-            else: viral_target = "video_0.mp4"
+            if current_phase == 0: viral_target, size = video_library[10]
+            elif current_phase == 1: viral_target, size = video_library[20]
+            else: viral_target, size = video_library[0]
             flash_crowd += 1
         
             for _ in range(50):
                 # All coming from random clients 
                 client = random.choice(client_nodes)
                 
-                res = sim.fetch_payload(client, target_video, isAnycast)
+                res = sim.fetch_payload(client, viral_target, isAnycast, size)
 
                 if res:
                     total_latency_cached += res["latency"]
@@ -85,18 +92,19 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
         # 0.5% chance of a Malicious Botnet / Web Scraper
         if random.random() < 0.005:
             # The bot requests 50 random, highly unpopular videos exactly once
-            scraper_targets = random.sample(range(100, 500), 50) 
+            scraper_targets = random.sample(range(200, 500), 50) 
             
             for bot_target_id in scraper_targets:
                 bot_video = f"video_{bot_target_id}.mp4"
+                b_size = 1_000_000
                 client = random.choice(client_nodes)
                 
-                res = sim.fetch_payload(client, target_video, isAnycast)
+                res = sim.fetch_payload(client, bot_video, isAnycast, b_size)
                 
                 if res:
                     total_latency_cached += res["latency"]
-                    # if res["status"] == "hit": 
-                    #     hits += 1
+                    if res["status"] == "hit": 
+                        hits += 1
 
         # 2% chance the Chaos Monkey attacks the network during this tick
         if random.random() < 0.02:
@@ -104,24 +112,43 @@ def run_single_strategy_on_scale_free(strategy, num_nodes, num_requests, cache_s
             chaos_monkey += 1
 
     hit_rate = (hits / num_requests) * 100
-    return strategy, hit_rate, total_latency_cached, flash_crowd, chaos_monkey
+    cached_rate = total_size_cached / total_size_requested * 100
+    return strategy, hit_rate, cached_rate, total_latency_cached, flash_crowd, chaos_monkey
 
 
 
 
 def run_parallel_cache_test(num_requests = 15000, cache_size = 10, num_nodes = 100, isAnycast = True):
-    regions = ["us-east", "us-west", "eu-central", "ap-south"]
-    nodes_per_region = 50
-
-    # Generate the video library and traffic weights
-    video_library = [f"video_{i}.mp4" for i in range(500)]
-
+    # regions = ["us-east", "us-west", "eu-central", "ap-south"]
+    # nodes_per_region = 50
 
     # Generate random seed for entire brenchmark run
     master_seed = random.randint(1, 999999)
 
+    # Generate the video library and traffic weights
+    video_library = []
+    size = 1_000_000
+    for i in range(500):
+        # tier = random.choices(["small", "medium", "large"], weights=[60, 30, 10], k=1)[0]
+        
+        # if tier == "small":
+        #     size = random.randint(50_000, 200_000)
+        # elif tier == "medium":
+        #     size = random.randint(500_000, 1_500_000)
+        # else:
+        #     size = random.randint(3_000_000, 4_500_000)
+        # if i <= 50:
+        #     size = random.randint(50_000, 200_000)
+        # elif i < 200:
+        #     size = random.randint(500_000, 1_000_000)
+        # else:
+        #     size = random.randint(2_500_000, 4_500_000)
+        
+        video_library.append((f"video_{i}.mp4", size))
+
     results = {}
-    strategies = ["RANDOM", "LRU", "LFU", "W-TINYLFU"]
+    strategies = ["RANDOM", "LRU", "LFU"]
+    # , "LFU" , "W-TINYLFU"]
 
     print(f"\n--- BOOTING SYNCHRONIZED PARALLEL CDN SIMULATION ---")
     print(f"Master Seed: {master_seed}")
@@ -143,9 +170,9 @@ def run_parallel_cache_test(num_requests = 15000, cache_size = 10, num_nodes = 1
             futures.append(future)
 
         for future in concurrent.futures.as_completed(futures):
-            strategy_name, hit_rate, latency, fresh, monkey = future.result()
-            results[strategy_name] = {"hit_rate": hit_rate, "latency": latency}
-            print(f"[{strategy_name}] CPU Core finished! Hit Rate: {hit_rate:.1f}%")
+            strategy_name, hit_rate, cached_rate, latency, fresh, monkey = future.result()
+            results[strategy_name] = {"hit_rate": hit_rate, "cached_rate": cached_rate, "latency": latency}
+            print(f"[{strategy_name}] CPU Core finished! Hit Rate: {hit_rate:.1f}%! Cached Rate:{cached_rate:.1f}%!")
             print(f"[{strategy_name}] Hit Flash Crowds {fresh} times, hit Chaos Monkey {monkey} times\n")
 
     execution_time = time.perf_counter() - start_time
@@ -156,30 +183,30 @@ def run_parallel_cache_test(num_requests = 15000, cache_size = 10, num_nodes = 1
     print("==================================================")
     print(f"Execution Time: {execution_time:.2f} seconds")
     print("--------------------------------------------------")
-    print(f"Control Group (RANDOM)   : {results['RANDOM']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (LRU)      : {results['LRU']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (LFU)      : {results['LFU']['hit_rate']:.1f}% Hit Rate")
-    print(f"Experimental  (W-TINYLFU): {results['W-TINYLFU']['hit_rate']:.1f}% Hit Rate")
+    print(f"Control Group (RANDOM)   : {results['RANDOM']['hit_rate']:.1f}% Hit Rate, {results['RANDOM']['cached_rate']:.1f}% Cached Rate")
+    print(f"Experimental  (LRU)      : {results['LRU']['hit_rate']:.1f}% Hit Rate, {results['LRU']['cached_rate']:.1f}% Cached Rate")
+    print(f"Experimental  (LFU)      : {results['LFU']['hit_rate']:.1f}% Hit Rate, {results['LFU']['cached_rate']:.1f}% Cached Rate")
+    # print(f"Experimental  (W-TINYLFU): {results['W-TINYLFU']['hit_rate']:.1f}% Hit Rate")
     print("--------------------------------------------------")
     print(f"Control Group (RANDOM)   : Avg. {(results['RANDOM']['latency']/num_requests):.1f} latency Cost")
     print(f"Experimental  (LRU)      : Avg. {(results['LRU']['latency']/num_requests):.1f} latency Cost")
     print(f"Experimental  (LFU)      : Avg. {(results['LFU']['latency']/num_requests):.1f} latency Cost")
-    print(f"Experimental  (W-TINYLFU): Avg. {(results['W-TINYLFU']['latency']/num_requests):.1f} latency Cost")
+    # print(f"Experimental  (W-TINYLFU): Avg. {(results['W-TINYLFU']['latency']/num_requests):.1f} latency Cost")
     print("--------------------------------------------------")
 
     lfu_vs_random_diff = results['LFU']['hit_rate'] - results['RANDOM']['hit_rate']
     lfu_vs_lru_diff = results['LFU']['hit_rate'] - results['LRU']['hit_rate']
-    wtlfu_vs_lru_diff = results['W-TINYLFU']['hit_rate'] - results['LRU']['hit_rate']
-    wtlfu_vs_lfu_diff = results['W-TINYLFU']['hit_rate'] - results['LFU']['hit_rate']
+    # wtlfu_vs_lru_diff = results['W-TINYLFU']['hit_rate'] - results['LRU']['hit_rate']
+    # wtlfu_vs_lfu_diff = results['W-TINYLFU']['hit_rate'] - results['LFU']['hit_rate']
     
     print(f"LFU beat RANDOM by:         +{lfu_vs_random_diff:.1f}% hit rate")
     print(f"LFU beat LRU by:            +{lfu_vs_lru_diff:.1f}% hit rate")
-    print(f"W-TINYLFU beat LRU by:      +{wtlfu_vs_lru_diff:.1f}% hit rate")
-    print(f"W-TINYLFU beat LFU by:      +{wtlfu_vs_lfu_diff:.1f}% hit rate")
+    # print(f"W-TINYLFU beat LRU by:      +{wtlfu_vs_lru_diff:.1f}% hit rate")
+    # print(f"W-TINYLFU beat LFU by:      +{wtlfu_vs_lfu_diff:.1f}% hit rate")
     print("--------------------------------------------------")
     
 
     print("==================================================\n")
 
 if __name__ == "__main__":
-    run_parallel_cache_test(num_requests = 30000, cache_size = 10, num_nodes = 500)
+    run_parallel_cache_test(num_requests = 30000, cache_size = 5_000_000, num_nodes = 500)

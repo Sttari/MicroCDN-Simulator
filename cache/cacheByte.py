@@ -1,6 +1,6 @@
 import random
-from collections import OrderedDict, defaultdict
-from Heapdict import Heapdict
+from collections import OrderedDict
+from .Heapdict import Heapdict
 
 
 class RandomCache:
@@ -19,6 +19,8 @@ class RandomCache:
         return None
     
     def put(self, payload_id, data, size):
+        if size > self.max_bytes:
+            return None
         # For new design, we would assume payload_id, data and size are fixed
         if payload_id not in self.store:
             while self.curr_bytes + size > self.max_bytes :
@@ -63,10 +65,12 @@ class LRUCache:
     def get(self, payload_id):
         if payload_id in self.store:
             self.store.move_to_end(payload_id)
-            return self.store.get(payload_id).get("data")
+            return self.store[payload_id]["data"]
         return None
 
     def put(self, payload_id, data, size):
+        if size > self.max_bytes:
+            return None
         # Again, we assume payload_id, data, size are fixed
         if payload_id not in self.store:
             while self.curr_bytes + size > self.max_bytes:
@@ -75,6 +79,7 @@ class LRUCache:
                 "data": data,
                 "size": size
             }
+            self.curr_bytes += size
         else:
             self.store.move_to_end(payload_id)
         return None
@@ -93,23 +98,25 @@ class LFUCache:
     
     def get(self, payload_id):
         if payload_id in self.store:
-            freq = self.density_score_map[score][payload_id]
-            score = freq / self.store[payload_id]["size"]
+            score = self.store[payload_id]["freq"] / self.store[payload_id]["size"]
 
-            freq += 1
+            self.store[payload_id]["freq"] += 1
 
             del self.density_score_map[score][payload_id]
             
             if not self.density_score_map[score]:
                 del self.density_score_map[score]
 
-            score = freq / self.store[payload_id]["size"]
-            self.density_score_map[score][payload_id] = freq
+            score = self.store[payload_id]["freq"] / self.store[payload_id]["size"]
+            self.density_score_map[score][payload_id] = self.store[payload_id]["freq"]
 
-        return self.store[payload_id]["data"]
+            return self.store[payload_id]["data"]
+        return None
 
 
     def put(self, payload_id, data, size):
+        if size > self.max_bytes:
+            return None
         # Again, we assume id, data, size is fixed tuple
         if payload_id in self.store:
             self.get(payload_id)
@@ -120,8 +127,10 @@ class LFUCache:
 
             self.store[payload_id] = {
                 "data": data,
-                "size": size
+                "size": size,
+                "freq": 1
             }
+            self.curr_bytes += size
             score = 1 / size 
             self.density_score_map[score][payload_id] = 1
             return

@@ -4,7 +4,7 @@ from CacheNode import CacheNode
 import heapq
 
 class MicroCDNSimulator:
-    def __init__(self, capacity = 5, strategy = "LRU"):
+    def __init__(self, max_size = 5_000_000, strategy = "LRU"):
         self.num_nodes = 0
         self.origin_server = 0
         self.graph = defaultdict(dict)  # For quick latency lookups: graph[u][v] = latency
@@ -12,7 +12,7 @@ class MicroCDNSimulator:
         self.node_metadata = {}  # Node id -> {}  Store metadata for nodes (e.g., region, type) 
 
         # Add CacheNode
-        self.cache_capacity = capacity
+        self.cache_size = max_size
         self.cache_strategy = strategy
         self.cache_layer = {} # Will hold NodeID -> CacheNode Object
 
@@ -52,11 +52,11 @@ class MicroCDNSimulator:
         self.edges = new_edges
         return broken_count
 
-    def fetch_payload(self, client_node, payload_id, isAnycast):
+    def fetch_payload(self, client_node, payload_id, isAnycast, size):
         if isAnycast:
-            return self._fetch_payload_anycast(client_node, payload_id)
+            return self._fetch_payload_anycast(client_node, payload_id, size)
         else:
-            return self._fetch_payload_origin(client_node, payload_id)
+            return self._fetch_payload_origin(client_node, payload_id, size)
 
     def _find_nearest_node(self, start_node, node_type = "edge_cache"):
         """
@@ -129,7 +129,7 @@ class MicroCDNSimulator:
             curr = successor[curr]
         return path, dist[start_node]
 
-    def _fetch_payload_origin(self, client_node,  payload_id):
+    def _fetch_payload_origin(self, client_node,  payload_id, size):
         """
         Inputs:
             client_node (int): The user requesting the file.
@@ -164,7 +164,7 @@ class MicroCDNSimulator:
             if node_info.get("type") == "edge_cache":
 
                 if curr_node not in self.cache_layer:
-                    self.cache_layer[curr_node] = CacheNode(self.cache_capacity, self.cache_strategy)
+                    self.cache_layer[curr_node] = CacheNode(max_bytes =self.cache_size, strategy=self.cache_strategy)
 
                 cached_data = self.cache_layer[curr_node].get(payload_id)
 
@@ -172,30 +172,34 @@ class MicroCDNSimulator:
                 if cached_data:
                     for missed_node in edge_nodes_passed:
                         if missed_node not in self.cache_layer:
-                            self.cache_layer[missed_node] = CacheNode(self.cache_capacity, self.cache_strategy)
-                        self.cache_layer[missed_node].put(payload_id, cached_data)
+                            self.cache_layer[missed_node] = CacheNode(max_bytes =self.cache_size, strategy=self.cache_strategy)
+                        self.cache_layer[missed_node].put(payload_id, cached_data, size)
 
                     return  {
                         "status": "hit",
                         "served_by": curr_node,
                         "latency": current_latency,
-                        "data": cached_data
+                        "data": cached_data,
+                        "Byte from Cache": size,
+                        "Byte requested": size,
                     }
                 edge_nodes_passed.append(curr_node)
         # 5. Cache Miss: If we reach the origin server without a cache hit, we fetch the data and then populate the caches on the return trip.
         fetched_data = f"Binary_Data_For_{payload_id}"  # Simulate fetching data from the origin server
         for missed_node in edge_nodes_passed:
             if missed_node not in self.cache_layer:
-                self.cache_layer[missed_node] = CacheNode(self.cache_capacity, self.cache_strategy)
-            self.cache_layer[missed_node].put(payload_id, fetched_data)  # Populate the cache with the fetched data
+                self.cache_layer[missed_node] = CacheNode(max_bytes =self.cache_size, strategy=self.cache_strategy)
+            self.cache_layer[missed_node].put(payload_id, fetched_data, size)  # Populate the cache with the fetched data
         return {
             "status": "miss",
             "served_by": self.origin_server,
             "latency": total_latency,
-            "data": fetched_data
+            "data": fetched_data,
+            "Byte from Cache": 0,
+            "Byte requested": size,
         }
 
-    def _fetch_payload_anycast(self, client_node, payload_id):
+    def _fetch_payload_anycast(self, client_node, payload_id, size):
         """
         Inputs:
         client_node (int): The user requesting the file.
@@ -218,22 +222,26 @@ class MicroCDNSimulator:
                 return {
                     "status":"hit",
                     "latency": client_to_edge_latency,
-                    "served_by":edge_node
+                    "served_by":edge_node,
+                    "Byte from Cache": size,
+                    "Byte requested": size,
                 }
         else :
-            self.cache_layer[edge_node] = CacheNode(self.cache_capacity, self.cache_strategy)
+            self.cache_layer[edge_node] = CacheNode(max_bytes =self.cache_size, strategy=self.cache_strategy)
             
         origin_server, edge_to_origin_latency = self._find_nearest_node(edge_node, "origin")
         if edge_to_origin_latency == float('inf'):
             return None
         fetched_data = f"Binary_Data_For_{payload_id}"
 
-        self.cache_layer[edge_node].put(payload_id, fetched_data)
+        self.cache_layer[edge_node].put(payload_id, fetched_data, size)
         total_latency = client_to_edge_latency + edge_to_origin_latency
 
         return {
             "status": "miss", 
             "latency": total_latency,
-            "served_by": origin_server
+            "served_by": origin_server,
+            "Byte from Cache": 0,
+            "Byte requested": size,
         }
             
